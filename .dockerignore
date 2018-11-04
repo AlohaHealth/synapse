@@ -5,3 +5,4 @@ demo/etc
 tox.ini
 .git/*
 .tox/*
+/devops

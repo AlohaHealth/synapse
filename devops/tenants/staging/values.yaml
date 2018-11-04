@@ -1,0 +1,8 @@
+# Default configuration for aloha-matrix
+
+tenant:
+  name: staging
+
+project:
+  id: aloha-tenant-staging-v1
+  domain: staging.aloha.health

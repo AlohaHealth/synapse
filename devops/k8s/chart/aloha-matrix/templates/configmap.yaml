@@ -1,0 +1,10 @@
+# https://github.com/matrix-org/synapse/tree/master/docker#environment
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aloha-matrix.name" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "aloha-matrix.labels" . | indent 4 }}
+data:
+{{ (tpl (.Files.Glob "synapse/*").AsConfig . ) | indent 2 }}

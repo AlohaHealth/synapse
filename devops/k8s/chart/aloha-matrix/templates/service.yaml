@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "aloha-matrix.name" . }}
+  labels:
+    {{- include "aloha-matrix.labels" . | indent 4 }}
+spec:
+  type: NodePort
+  ports:
+  - port: 8008
+    targetPort: clients
+    protocol: TCP
+    name: matrix-clients
+  - port: 8448
+    targetPort: federation
+    protocol: TCP
+    name: matrix-federation
+  selector:
+    app: aloha-matrix
+    release: {{ .Release.Name }}

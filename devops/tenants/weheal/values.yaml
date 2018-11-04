@@ -1,0 +1,9 @@
+# WeHeal Tenant Configuration for aloha-matrix
+
+tenant:
+  name: weheal
+  domain: weheal.org
+
+project:
+  id: aloha-weheal
+  domain: weheal.aloha.health

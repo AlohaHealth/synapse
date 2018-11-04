@@ -1,0 +1,11 @@
+{{ template "aloha-matrix.name" . }} has been deployed and available at:
+https://{{ template "aloha-matrix.hostname" . }}
+
+If this is an initial installation, you may want to register a new
+default admin user with the following command:
+kubectl exec {{ template "aloha-matrix.name" . }}-0 -c synapse -- \
+  register_new_matrix_user \
+  --config {{ .Values.synapse.config_path }}/homeserver.yaml \
+  --user aloha \
+  --password aloha4health \
+  --admin

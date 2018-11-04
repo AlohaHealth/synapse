@@ -1,0 +1,43 @@
+{{- $name := include "aloha-matrix.name" . -}}
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aloha-matrix.labels" . | indent 4 }}
+  annotations:
+    certmanager.k8s.io/cluster-issuer: {{ .Values.certmanager.issuer }}
+    ingress.kubernetes.io/ssl-redirect: "true"
+    kubernetes.io/ingress.class: nginx
+    kubernetes.io/tls-acme: “true”
+spec:
+  tls:
+  - hosts:
+    {{- if .Values.tenant.hostnames -}}
+      {{- range .Values.tenant.hostnames }}
+    - {{ . }}
+      {{- end }}
+    {{- else }}
+    - {{ template "aloha-matrix.hostname" . }}
+    {{- end }}
+    secretName: {{ $name }}-tls
+  rules:
+  {{- if .Values.tenant.hostnames -}}
+  {{-   range .Values.tenant.hostnames }}
+  - host: {{ . }}
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: {{ $name }}
+          servicePort: matrix-clients
+  {{-   end -}}
+  {{- else }}
+  - host: {{ template "aloha-matrix.hostname" . }}
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: {{ $name }}
+          servicePort: matrix-clients
+  {{- end }}

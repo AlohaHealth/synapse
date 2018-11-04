@@ -1,0 +1,74 @@
+version: "1.0"
+
+stages:
+  - build
+  - test
+  - deploy
+
+steps:
+  environment_prep:
+    stage: build
+    title: Prepare Build Environment
+    image: codefreshio/git-image:latest
+    commands:
+      - cf_export FEATURE_NAME=$(echo "$CF_BRANCH" | sed -n "s/^feature\/\(.*\)/\1/p")
+      - cf_export BUILD_TAG=$(echo "${CF_BRANCH_TAG_NORMALIZED}" | tr '[:upper:]' '[:lower:]')
+      - cf_export IMAGE_TAG=$(echo "${CF_BRANCH_TAG_NORMALIZED}" | tr '[:upper:]' '[:lower:]')
+      - cf_export CHART_TAG=$(if [ "${CF_BRANCH_TAG_NORMALIZED}" != 'master' ]; then echo "${CHART_VERSION}-${CF_BRANCH_TAG_NORMALIZED}" | tr '[:upper:]' '[:lower:]'; else echo "${CHART_VERSION}"; fi)
+
+  pipeline_prep:
+    stage: build
+    title: Check Feature Build
+    image: codefreshio/git-image:latest
+    commands:
+      - cf_export BUILD_TAG=$(echo "${FEATURE_NAME}" | tr '[:upper:]' '[:lower:]')
+      - cf_export IMAGE_TAG=$(echo "${FEATURE_NAME}-${CF_SHORT_REVISION}" | tr '[:upper:]' '[:lower:]')
+      - cf_export CHART_TAG=$(echo "${CHART_VERSION}-${FEATURE_NAME}" | tr '[:upper:]' '[:lower:]')
+    when:
+      condition:
+        all:
+          isFeatureBranch: "Boolean('${{FEATURE_NAME}}') == true"
+
+  build_aloha_web:
+    stage: build
+    title: Build Synapse Docker Image
+    type: build
+    working_directory: ${{main_clone}}
+    dockerfile: docker/Dockerfile
+    image_name: aloha-matrix
+    tag: ${{IMAGE_TAG}}
+    build_arguments:
+      - FEATURE_NAME=${{FEATURE_NAME}}
+
+  push_image:
+    stage: deploy
+    title: Push GCR Image
+    type: push
+    candidate: ${{build_aloha_web}}
+    image_name: aloha-matrix
+    tags:
+    - ${{IMAGE_TAG}}
+    - ${{CF_SHORT_REVISION}}
+    registry: gcr
+
+  push_chart:
+    stage: deploy
+    title: Push Helm Chart
+    image: codefresh/cfstep-helm:2.9.0
+    environment:
+      - ACTION=push
+      - CHART_REF=devops/k8s/chart/aloha-matrix
+      - CHART_VERSION=${{CHART_TAG}}
+      - CMD_PS=--force
+
+  deploy_chart:
+    stage: deploy
+    title: Deploy to Kubernetes Cluster
+    image: codefresh/cfstep-helm:2.9.0
+    environment:
+      - ACTION=install
+      - CHART_REF=aloha-matrix
+      - CHART_VERSION=${{CHART_TAG}}
+      - RELEASE_NAME=${{BUILD_TAG}}-matrix
+      - VALUE_image_tag=${{IMAGE_TAG}}
+      - VALUE_image_pullPolicy=Always
