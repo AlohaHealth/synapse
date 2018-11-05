@@ -1,4 +1,4 @@
-version: "1.0"
+version: '1.0'
 
 stages:
   - build
@@ -47,8 +47,8 @@ steps:
     candidate: ${{build_aloha_web}}
     image_name: aloha-matrix
     tags:
-    - ${{IMAGE_TAG}}
-    - ${{CF_SHORT_REVISION}}
+      - ${{IMAGE_TAG}}
+      - ${{CF_SHORT_REVISION}}
     registry: gcr
 
   push_chart:
@@ -70,5 +70,5 @@ steps:
       - CHART_REF=aloha-matrix
       - CHART_VERSION=${{CHART_TAG}}
       - RELEASE_NAME=${{BUILD_TAG}}-matrix
-      - VALUE_image_tag=${{IMAGE_TAG}}
-      - VALUE_image_pullPolicy=Always
+      - VALUE_image_tag=${{CF_SHORT_REVISION}}
+      - VALUE_pullPolicy=Always

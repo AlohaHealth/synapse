@@ -28,7 +28,7 @@ from twisted.web.client import PartialDownloadError
 from synapse.api.errors import Codes, LoginError, SynapseError
 from synapse.http.server import finish_request
 from synapse.http.servlet import parse_json_object_from_request
-from synapse.types import UserID
+from synapse.types import UserID, create_requester
 from synapse.util.msisdn import phone_number_to_msisdn
 
 from .base import ClientV1RestServlet, client_path_patterns
@@ -85,23 +85,28 @@ class LoginRestServlet(ClientV1RestServlet):
     CAS_TYPE = "m.login.cas"
     TOKEN_TYPE = "m.login.token"
     JWT_TYPE = "m.login.jwt"
+    AUTH0_TYPE = "m.login.auth0"
 
     def __init__(self, hs):
         super(LoginRestServlet, self).__init__(hs)
         self.idp_redirect_url = hs.config.saml2_idp_redirect_url
         self.saml2_enabled = hs.config.saml2_enabled
+        self.auth0_enabled = hs.config.auth0_enabled
         self.jwt_enabled = hs.config.jwt_enabled
         self.jwt_secret = hs.config.jwt_secret
         self.jwt_algorithm = hs.config.jwt_algorithm
         self.cas_enabled = hs.config.cas_enabled
         self.auth_handler = self.hs.get_auth_handler()
         self.device_handler = self.hs.get_device_handler()
+        self.profile_handler = self.hs.get_profile_handler()
         self.handlers = hs.get_handlers()
 
     def on_GET(self, request):
         flows = []
         if self.jwt_enabled:
             flows.append({"type": LoginRestServlet.JWT_TYPE})
+        if self.auth0_enabled:
+            flows.append({"type": LoginRestServlet.AUTH0_TYPE})
         if self.saml2_enabled:
             flows.append({"type": LoginRestServlet.SAML2_TYPE})
         if self.cas_enabled:
@@ -139,6 +144,10 @@ class LoginRestServlet(ClientV1RestServlet):
                     "uri": "%s%s" % (self.idp_redirect_url, relay_state)
                 }
                 defer.returnValue((200, result))
+            elif self.auth0_enabled and (login_submission["type"] ==
+                                       LoginRestServlet.AUTH0_TYPE):
+                result = yield self.do_auth0_login(login_submission)
+                defer.returnValue(result)
             elif self.jwt_enabled and (login_submission["type"] ==
                                        LoginRestServlet.JWT_TYPE):
                 result = yield self.do_jwt_login(login_submission)
@@ -316,6 +325,119 @@ class LoginRestServlet(ClientV1RestServlet):
                 "access_token": access_token,
                 "home_server": self.hs.hostname,
             }
+
+        defer.returnValue((200, result))
+
+    @defer.inlineCallbacks
+    def do_auth0_login(self, login_submission):
+        auth0_access_token = login_submission.get("access_token", None)
+        auth0_id_token = login_submission.get("id_token", None)
+        auth0_tenant_domain = self.hs.config.auth0_tenant_domain
+        auth0_client_id = self.hs.config.auth0_client_id
+        auth0_username = self.hs.config.auth0_username
+
+        auth0_url = "https://"+ auth0_tenant_domain +"/"
+        auth0_jwks_url = auth0_url +".well-known/jwks.json"
+
+        if auth0_access_token is None:
+            raise LoginError(
+                401, "Auth0 access_token is required",
+                errcode=Codes.UNAUTHORIZED
+            )
+        if auth0_id_token is None:
+            raise LoginError(
+                401, "Auth0 id_token is required",
+                errcode=Codes.UNAUTHORIZED
+            )
+
+        try:
+            auth0_jwks_json = urllib.request.urlopen(auth0_jwks_url)
+            auth0_jwks = json.loads(auth0_jwks_json.read())
+        except Exception:
+            raise LoginError(401, "Failed to retrieve JWKS from Auth0", errcode=Codes.UNAUTHORIZED)
+
+        try:
+            from jose import jwt
+
+            jwks_key = None
+            jwks_alg = None
+            token_header = jwt.get_unverified_header(auth0_id_token)
+            for key in auth0_jwks["keys"]:
+                if key["kid"] == token_header["kid"]:
+                    # this key id was used to encrypt the token
+                    jwks_alg = key["alg"]
+                    jwks_key = {
+                        "kty": key["kty"],
+                        "kid": key["kid"],
+                        "use": key["use"],
+                        "n": key["n"],
+                        "e": key["e"],
+                    }
+
+            if jwks_key is None:
+                raise LoginError(401, "Unable to locate JWKS 'kid' matching JWT token", errcode=Codes.UNAUTHORIZED)
+
+            payload = jwt.decode(
+                auth0_id_token,
+                jwks_key,
+                algorithms=jwks_alg,
+                audience=auth0_client_id,
+                issuer=auth0_url,
+                access_token=auth0_access_token,
+            )
+
+        except jwt.ExpiredSignatureError:
+            raise LoginError(401, "Expired JWT", errcode=Codes.UNAUTHORIZED)
+        except jwt.JWTClaimsError:
+            raise LoginError(401, "Invalid JWT claims", errcode=Codes.UNAUTHORIZED)
+        except jwt.JWTError:
+            raise LoginError(401, "Invalid JWT", errcode=Codes.UNAUTHORIZED)
+
+        token_user = payload.get(auth0_username, None)
+        if token_user is None:
+            raise LoginError(401, "JWT does not contain a username. Make sure 'profile' is included in your JWT request scope.", errcode=Codes.UNAUTHORIZED)
+
+        user = UserID(token_user, self.hs.hostname)
+        user_id = user.to_string()
+
+        registered_user_id = yield self.auth_handler.check_user_exists(user_id)
+        if registered_user_id is None:
+            # register a new user
+            registered_user_id, _ = yield self.handlers.registration_handler.register(
+                localpart=token_user,
+                generate_token=False,
+            )
+
+            requestor = create_requester(user_id)
+
+            # set initial display name
+            displayname = payload.get("name", None)
+            if displayname is not None:
+                yield self.profile_handler.set_displayname(
+                    user, requestor, displayname, by_admin=True
+                )
+
+            # set initial avatar url
+            avatar_url = payload.get("picture")
+            if avatar_url is not None:
+                yield self.profile_handler.set_avatar_url(
+                    user, requestor, avatar_url, by_admin=True
+                )
+
+        # get an access token
+        device_id = yield self._register_device(
+            registered_user_id, login_submission
+        )
+        access_token = yield self.auth_handler.get_access_token_for_user_id(
+            registered_user_id, device_id,
+        )
+
+        result = {
+            "access_token": access_token,
+            "device_id": device_id,
+            "home_server": self.hs.hostname,
+            "user_id": registered_user_id,
+        }
 
         defer.returnValue((200, result))
 

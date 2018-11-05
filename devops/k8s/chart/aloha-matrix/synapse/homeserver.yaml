@@ -568,13 +568,18 @@ perspectives:
 
 
 # The JWT needs to contain a globally unique "sub" (subject) claim.
-# https://manage.auth0.com/#/applications/Z8fDjG8dkxigmdp5v4QwTzOw__zjiPQI/settings
-# jwt_config:
-#    enabled: true
-#    secret: "secret"
-#    algorithm: "HS256"
-
-
+# auth0_config:
+#   enabled: true|false
+#   tenant_domain: 'tenant.auth0.com'
+#   client_id: 'XXXXXX'
+#   username: 'nickname'|'http://custom.oidc/claim'
+{{- with .Values.auth0_config }}
+auth0_config:
+  enabled: {{ .enabled }}
+  tenant_domain: {{ .tenant_domain }}
+  client_id: {{ .client_id }}
+  username: {{ .username }}
+{{- end }}
 
 # Enable password for login.
 password_config:

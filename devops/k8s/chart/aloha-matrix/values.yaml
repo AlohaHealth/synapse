@@ -10,18 +10,18 @@ project:
   region: us-central1
 
 image:
-  repository: "gcr.io/aloha-internal/aloha-matrix"
+  repository: 'gcr.io/aloha-internal/aloha-matrix'
   tag: develop
   pullPolicy: IfNotPresent
   pullSecrets:
-  - aloha-gcr-io
+    - aloha-gcr-io
 
 cloudsql:
-  repository: "gcr.io/cloudsql-docker/gce-proxy"
-  tag: "1.12"
+  repository: 'gcr.io/cloudsql-docker/gce-proxy'
+  tag: '1.12'
   instance: null
   pullPolicy: IfNotPresent
-  secretMount: "/secrets/cloudsql/credentials.json"
+  secretMount: '/secrets/cloudsql/credentials.json'
 
 certmanager:
   issuer: letsencrypt
@@ -31,38 +31,44 @@ volumes:
     size: 10Gi
 
 synapse:
-  config_path: "/synapse/config"
-  allow_guest_access: "False"
-  cache_factor: "0.5"
-  event_cache_size: "10K"
-  enable_metrics: "True"
-  enable_registration: "True"
-  enable_registration_captcha: "False"
-  form_secret: "j2ajdKd,PnM:0U*L00FfPu:h@7sL~W8-^Q42_ImgP3.-yUKda5"
-  macaroon_secret_key: "og~p~j+ZeOZS9DN#=@.=4Ya=MpHksiG-PJR4Sgmx3zkmnSvn&m"
+  config_path: '/synapse/config'
+  allow_guest_access: false
+  cache_factor: '0.5'
+  event_cache_size: '10K'
+  enable_metrics: true
+  enable_registration: true
+  enable_registration_captcha: false
+  form_secret: 'j2ajdKd,PnM:0U*L00FfPu:h@7sL~W8-^Q42_ImgP3.-yUKda5'
+  macaroon_secret_key: 'og~p~j+ZeOZS9DN#=@.=4Ya=MpHksiG-PJR4Sgmx3zkmnSvn&m'
   macaroon_shared_key: null
-  media_store_path: "/data/media"
-  no_tls: "False"
+  media_store_path: '/data/media'
+  no_tls: false
   recaptcha_private_key: null
   recaptcha_public_key: null
-  registration_shared_secret: "pLnA++ehpklm3c@X^@PrASK0jruPeK_hoZ2rP1jd7-v1#R-,fu"
-  report_stats: "False"
+  registration_shared_secret: 'pLnA++ehpklm3c@X^@PrASK0jruPeK_hoZ2rP1jd7-v1#R-,fu'
+  report_stats: false
   turn_uris: null
   turn_secret: null
-  uploads_path: "/data/uploads"
-  web_client: "False"
+  uploads_path: '/data/uploads'
+  web_client: false
 
 postgres:
   user: synapse
   password: null
   database: null
-  host: "127.0.0.1"
-  port: "5432"
+  host: '127.0.0.1'
+  port: '5432'
   cp_min: 5
   cp_max: 10
 
-smtp: {}
-  # host: "localhost"
-  # port: "25"
-  # user: "mail"
-  # password: "secret"
+# smtp:
+#   host: "localhost"
+#   port: "25"
+#   user: "mail"
+#   password: "secret"
+
+auth0_config:
+  enabled: true
+  tenant_domain: 'aloha-dev.auth0.com'
+  client_id: 'Z8fDjG8dkxigmdp5v4QwTzOw__zjiPQI'
+  username: 'nickname'
