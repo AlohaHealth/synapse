@@ -478,7 +478,8 @@ allow_guest_access: {{ .Values.synapse.allow_guest_access }}
 # The list of identity servers trusted to verify third party
 # identifiers by this server.
 trusted_third_party_id_servers:
-- {{ include "aloha-matrix.hostname" . }}
+- "aloha.health"
+- {{ .Values.tenant.domain | quote }}
 
 # Users who register on this homeserver will automatically be joined
 # to these rooms
