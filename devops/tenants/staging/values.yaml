@@ -11,14 +11,12 @@ project:
   domain: aloha.health
 
 image:
-  tag: develop
+  tag: AHN-R3
   pullPolicy: Always
 
 auth0_config:
-  enabled: true
-  tenant_domain: 'aloha-staging.auth0.com'
-  client_id: 'I7qlvl8UbWkUlWHYJr0V4Kd6v92dTne5'
-  username: 'nickname'
+  tenant_domain: "auth.aloha.health"
+  client_id: "spr5JhMDvA7q7E7W2cH85RZ3KL7kqTVJ"
 
 postgres:
   database: synapse

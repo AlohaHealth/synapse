@@ -18,5 +18,5 @@ postgres:
 
 auth0_config:
   enabled: true
-  tenant_domain: 'aloha-prod-us.auth0.com'
+  tenant_domain: 'auth.aloha.health'
   client_id: 'spr5JhMDvA7q7E7W2cH85RZ3KL7kqTVJ'
