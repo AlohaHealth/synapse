@@ -27,6 +27,7 @@ RUN pip install --prefix="/install" --no-warn-script-location \
         cryptography \
         msgpack-python \
         pillow \
+        python-jose \
         pynacl
 
 # now install synapse and all of the python deps to /install.

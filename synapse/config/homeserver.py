@@ -21,6 +21,7 @@ from .consent_config import ConsentConfig
 from .database import DatabaseConfig
 from .emailconfig import EmailConfig
 from .groups import GroupsConfig
+from .auth0_config import Auth0Config
 from .jwt_config import JWTConfig
 from .key import KeyConfig
 from .logger import LoggingConfig
@@ -46,7 +47,7 @@ class HomeServerConfig(TlsConfig, ServerConfig, DatabaseConfig, LoggingConfig,
                        RatelimitConfig, ContentRepositoryConfig, CaptchaConfig,
                        VoipConfig, RegistrationConfig, MetricsConfig, ApiConfig,
                        AppServiceConfig, KeyConfig, SAML2Config, CasConfig,
-                       JWTConfig, PasswordConfig, EmailConfig,
+                       Auth0Config, JWTConfig, PasswordConfig, EmailConfig,
                        WorkerConfig, PasswordAuthProviderConfig, PushConfig,
                        SpamCheckerConfig, GroupsConfig, UserDirectoryConfig,
                        ConsentConfig,

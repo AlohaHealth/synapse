@@ -1,8 +1,24 @@
-# Default configuration for aloha-matrix
+# Staging configuration for aloha-matrix
 
 tenant:
   name: staging
+  domain: staging.aloha.health
+  hostnames:
+  - matrix.staging.aloha.health
 
 project:
   id: aloha-tenant-staging-v1
-  domain: staging.aloha.health
+  domain: aloha.health
+
+image:
+  tag: develop
+  pullPolicy: Always
+
+auth0_config:
+  enabled: true
+  tenant_domain: 'aloha-staging.auth0.com'
+  client_id: 'I7qlvl8UbWkUlWHYJr0V4Kd6v92dTne5'
+  username: 'nickname'
+
+postgres:
+  database: synapse

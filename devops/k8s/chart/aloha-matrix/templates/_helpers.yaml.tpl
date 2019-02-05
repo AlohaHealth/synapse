@@ -7,11 +7,15 @@
 {{- end -}}
 
 {{- define "aloha-matrix.hostname" -}}
-{{- if hasSuffix "matrix" .Release.Name -}}
-{{- printf "%s.%s.%s" .Release.Name .Values.tenant.name .Values.project.domain | trunc 63 | lower -}}
-{{- else -}}
-{{- printf "%s-matrix.%s.%s" .Release.Name .Values.tenant.name .Values.project.domain | trunc 63 | lower -}}
-{{- end -}}
+{{-  if .Values.tenant.hostnames -}}
+{{-    index .Values.tenant.hostnames 0 -}}
+{{-  else -}}
+{{-    if hasSuffix "matrix" .Release.Name -}}
+{{-      printf "%s.%s.%s" .Release.Name .Values.tenant.name .Values.project.domain | trunc 63 | lower -}}
+{{-    else -}}
+{{-      printf "%s-matrix.%s.%s" .Release.Name .Values.tenant.name .Values.project.domain | trunc 63 | lower -}}
+{{-    end -}}
+{{-  end -}}
 {{- end -}}
 
 {{- define "aloha-matrix.labels" }}

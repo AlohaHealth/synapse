@@ -3,7 +3,20 @@
 tenant:
   name: weheal
   domain: weheal.org
+  hostnames:
+  - matrix.weheal.aloha.health
 
 project:
   id: aloha-weheal
   domain: weheal.aloha.health
+
+image:
+  tag: AHN-R3
+
+postgres:
+  database: synapse
+
+auth0_config:
+  enabled: true
+  tenant_domain: 'aloha-prod-us.auth0.com'
+  client_id: 'spr5JhMDvA7q7E7W2cH85RZ3KL7kqTVJ'
