@@ -44,23 +44,22 @@ steps:
     image_name: aloha-matrix
     tags:
       - ${{CF_SHORT_REVISION}}
-      - ${{FEATURE_NAME}}
+      - ${{BUILD_TAG}}
     registry: gcr
 
   push_chart:
     stage: deploy
     title: Push Helm Chart
-    image: codefresh/cfstep-helm:latest
+    image: codefresh/cfstep-helm:2.12.3
     environment:
       - ACTION=push
       - CHART_REF=devops/k8s/chart/aloha-matrix
-      - CHART_VERSION=${{CHART_VERSION}}
       - CMD_PS=--force
 
   deploy_chart:
     stage: deploy
     title: Deploy to Kubernetes Cluster
-    image: codefresh/cfstep-helm:latest
+    image: codefresh/cfstep-helm:2.12.3
     environment:
       - ACTION=install
       - CHART_REF=aloha-matrix
