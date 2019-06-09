@@ -18,8 +18,9 @@ from mock import Mock
 
 from twisted.internet import defer
 
+import synapse.rest.admin
 from synapse.http.site import XForwardedForRequest
-from synapse.rest.client.v1 import admin, login
+from synapse.rest.client.v1 import login
 
 from tests import unittest
 
@@ -60,6 +61,77 @@ class ClientIpStoreTestCase(unittest.HomeserverTestCase):
                 "last_seen": 12345678000,
             },
             r,
+        )
+
+    def test_insert_new_client_ip_none_device_id(self):
+        """
+        An insert with a device ID of NULL will not create a new entry, but
+        update an existing entry in the user_ips table.
+        """
+        self.reactor.advance(12345678)
+
+        user_id = "@user:id"
+
+        # Add & trigger the storage loop
+        self.get_success(
+            self.store.insert_client_ip(
+                user_id, "access_token", "ip", "user_agent", None
+            )
+        )
+        self.reactor.advance(200)
+        self.pump(0)
+
+        result = self.get_success(
+            self.store._simple_select_list(
+                table="user_ips",
+                keyvalues={"user_id": user_id},
+                retcols=["access_token", "ip", "user_agent", "device_id", "last_seen"],
+                desc="get_user_ip_and_agents",
+            )
+        )
+
+        self.assertEqual(
+            result,
+            [
+                {
+                    'access_token': 'access_token',
+                    'ip': 'ip',
+                    'user_agent': 'user_agent',
+                    'device_id': None,
+                    'last_seen': 12345678000,
+                }
+            ],
+        )
+
+        # Add another & trigger the storage loop
+        self.get_success(
+            self.store.insert_client_ip(
+                user_id, "access_token", "ip", "user_agent", None
+            )
+        )
+        self.reactor.advance(10)
+        self.pump(0)
+
+        result = self.get_success(
+            self.store._simple_select_list(
+                table="user_ips",
+                keyvalues={"user_id": user_id},
+                retcols=["access_token", "ip", "user_agent", "device_id", "last_seen"],
+                desc="get_user_ip_and_agents",
+            )
+        )
+        # Only one result, has been upserted.
+        self.assertEqual(
+            result,
+            [
+                {
+                    'access_token': 'access_token',
+                    'ip': 'ip',
+                    'user_agent': 'user_agent',
+                    'device_id': None,
+                    'last_seen': 12345878000,
+                }
+            ],
         )
 
     def test_disabled_monthly_active_user(self):
@@ -134,7 +206,10 @@ class ClientIpStoreTestCase(unittest.HomeserverTestCase):
 
 class ClientIpAuthTestCase(unittest.HomeserverTestCase):
 
-    servlets = [admin.register_servlets, login.register_servlets]
+    servlets = [
+        synapse.rest.admin.register_servlets_for_client_rest_resource,
+        login.register_servlets,
+    ]
 
     def make_homeserver(self, reactor, clock):
         hs = self.setup_test_homeserver()

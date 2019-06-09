@@ -6,3 +6,5 @@ tox.ini
 .git/*
 .tox/*
 /devops
+debian/matrix-synapse/
+debian/matrix-synapse-*/

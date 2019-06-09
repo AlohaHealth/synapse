@@ -20,7 +20,6 @@ from twisted.python.failure import Failure
 
 from synapse.api.constants import EventTypes, Membership
 from synapse.api.errors import SynapseError
-from synapse.events.utils import serialize_event
 from synapse.storage.state import StateFilter
 from synapse.types import RoomStreamToken
 from synapse.util.async_helpers import ReadWriteLock
@@ -78,6 +77,7 @@ class PaginationHandler(object):
         self._purges_in_progress_by_room = set()
         # map from purge id to PurgeStatus
         self._purges_by_id = {}
+        self._event_serializer = hs.get_event_client_serializer()
 
     def start_purge_history(self, room_id, token,
                             delete_local_events=False):
@@ -136,7 +136,11 @@ class PaginationHandler(object):
             logger.info("[purge] complete")
             self._purges_by_id[purge_id].status = PurgeStatus.STATUS_COMPLETE
         except Exception:
-            logger.error("[purge] failed: %s", Failure().getTraceback().rstrip())
+            f = Failure()
+            logger.error(
+                "[purge] failed",
+                exc_info=(f.type, f.value, f.getTracebackObject()),
+            )
             self._purges_by_id[purge_id].status = PurgeStatus.STATUS_FAILED
         finally:
             self._purges_in_progress_by_room.discard(room_id)
@@ -235,6 +239,17 @@ class PaginationHandler(object):
                 "room_key", next_key
             )
 
+        if events:
+            if event_filter:
+                events = event_filter.filter(events)
+
+            events = yield filter_events_for_client(
+                self.store,
+                user_id,
+                events,
+                is_peeking=(member_event_id is None),
+            )
+
         if not events:
             defer.returnValue({
                 "chunk": [],
@@ -242,18 +257,8 @@ class PaginationHandler(object):
                 "end": next_token.to_string(),
             })
 
-        if event_filter:
-            events = event_filter.filter(events)
-
-        events = yield filter_events_for_client(
-            self.store,
-            user_id,
-            events,
-            is_peeking=(member_event_id is None),
-        )
-
         state = None
-        if event_filter and event_filter.lazy_load_members():
+        if event_filter and event_filter.lazy_load_members() and len(events) > 0:
             # TODO: remove redundant members
 
             # FIXME: we also care about invite targets etc.
@@ -273,18 +278,22 @@ class PaginationHandler(object):
         time_now = self.clock.time_msec()
 
         chunk = {
-            "chunk": [
-                serialize_event(e, time_now, as_client_event)
-                for e in events
-            ],
+            "chunk": (
+                yield self._event_serializer.serialize_events(
+                    events, time_now,
+                    as_client_event=as_client_event,
+                )
+            ),
             "start": pagin_config.from_token.to_string(),
             "end": next_token.to_string(),
         }
 
         if state:
-            chunk["state"] = [
-                serialize_event(e, time_now, as_client_event)
-                for e in state
-            ]
+            chunk["state"] = (
+                yield self._event_serializer.serialize_events(
+                    state, time_now,
+                    as_client_event=as_client_event,
+                )
+            )
 
         defer.returnValue(chunk)

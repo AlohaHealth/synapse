@@ -16,9 +16,14 @@
 import logging
 
 from synapse.api.constants import EventTypes
+from synapse.replication.tcp.streams.events import (
+    EventsStreamCurrentStateRow,
+    EventsStreamEventRow,
+)
 from synapse.storage.event_federation import EventFederationWorkerStore
 from synapse.storage.event_push_actions import EventPushActionsWorkerStore
 from synapse.storage.events_worker import EventsWorkerStore
+from synapse.storage.relations import RelationsWorkerStore
 from synapse.storage.roommember import RoomMemberWorkerStore
 from synapse.storage.signatures import SignatureWorkerStore
 from synapse.storage.state import StateGroupWorkerStore
@@ -48,6 +53,7 @@ class SlavedEventStore(EventFederationWorkerStore,
                        EventsWorkerStore,
                        SignatureWorkerStore,
                        UserErasureWorkerStore,
+                       RelationsWorkerStore,
                        BaseSlavedStore):
 
     def __init__(self, db_conn, hs):
@@ -79,25 +85,39 @@ class SlavedEventStore(EventFederationWorkerStore,
         if stream_name == "events":
             self._stream_id_gen.advance(token)
             for row in rows:
-                self.invalidate_caches_for_event(
-                    token, row.event_id, row.room_id, row.type, row.state_key,
-                    row.redacts,
-                    backfilled=False,
-                )
+                self._process_event_stream_row(token, row)
         elif stream_name == "backfill":
             self._backfill_id_gen.advance(-token)
             for row in rows:
                 self.invalidate_caches_for_event(
                     -token, row.event_id, row.room_id, row.type, row.state_key,
-                    row.redacts,
+                    row.redacts, row.relates_to,
                     backfilled=True,
                 )
         return super(SlavedEventStore, self).process_replication_rows(
             stream_name, token, rows
         )
 
+    def _process_event_stream_row(self, token, row):
+        data = row.data
+
+        if row.type == EventsStreamEventRow.TypeId:
+            self.invalidate_caches_for_event(
+                token, data.event_id, data.room_id, data.type, data.state_key,
+                data.redacts, data.relates_to,
+                backfilled=False,
+            )
+        elif row.type == EventsStreamCurrentStateRow.TypeId:
+            if data.type == EventTypes.Member:
+                self.get_rooms_for_user_with_stream_ordering.invalidate(
+                    (data.state_key, ),
+                )
+        else:
+            raise Exception("Unknown events stream row type %s" % (row.type, ))
+
     def invalidate_caches_for_event(self, stream_ordering, event_id, room_id,
-                                    etype, state_key, redacts, backfilled):
+                                    etype, state_key, redacts, relates_to,
+                                    backfilled):
         self._invalidate_get_event_cache(event_id)
 
         self.get_latest_event_ids_in_room.invalidate((room_id,))
@@ -119,3 +139,8 @@ class SlavedEventStore(EventFederationWorkerStore,
                 state_key, stream_ordering
             )
             self.get_invited_rooms_for_user.invalidate((state_key,))
+
+        if relates_to:
+            self.get_relations_for_event.invalidate_many((relates_to,))
+            self.get_aggregation_groups_for_event.invalidate_many((relates_to,))
+            self.get_applicable_edit.invalidate((relates_to,))

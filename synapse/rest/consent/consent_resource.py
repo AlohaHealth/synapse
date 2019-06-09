@@ -89,6 +89,7 @@ class ConsentResource(Resource):
 
         self.hs = hs
         self.store = hs.get_datastore()
+        self.registration_handler = hs.get_registration_handler()
 
         # this is required by the request_handler wrapper
         self.clock = hs.get_clock()
@@ -100,16 +101,7 @@ class ConsentResource(Resource):
                 "missing in config file.",
             )
 
-        # daemonize changes the cwd to /, so make the path absolute now.
-        consent_template_directory = path.abspath(
-            hs.config.user_consent_template_dir,
-        )
-        if not path.isdir(consent_template_directory):
-            raise ConfigError(
-                "Could not find template directory '%s'" % (
-                    consent_template_directory,
-                ),
-            )
+        consent_template_directory = hs.config.user_consent_template_dir
 
         loader = jinja2.FileSystemLoader(consent_template_directory)
         self._jinja_env = jinja2.Environment(
@@ -199,6 +191,7 @@ class ConsentResource(Resource):
             if e.code != 404:
                 raise
             raise NotFoundError("Unknown user")
+        yield self.registration_handler.post_consent_actions(qualified_user_id)
 
         try:
             self._render_template(request, "success.html")

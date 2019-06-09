@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Copyright 2014-2016 OpenMarket Ltd
-# Copyright 2018 New Vector Ltd.
+# Copyright 2018 New Vector Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -60,6 +60,7 @@ class Codes(object):
     UNSUPPORTED_ROOM_VERSION = "M_UNSUPPORTED_ROOM_VERSION"
     INCOMPATIBLE_ROOM_VERSION = "M_INCOMPATIBLE_ROOM_VERSION"
     WRONG_ROOM_KEYS_VERSION = "M_WRONG_ROOM_KEYS_VERSION"
+    EXPIRED_ACCOUNT = "ORG_MATRIX_EXPIRED_ACCOUNT"
 
 
 class CodeMessageException(RuntimeError):
@@ -327,9 +328,23 @@ class RoomKeysVersionError(SynapseError):
         self.current_version = current_version
 
 
-class IncompatibleRoomVersionError(SynapseError):
-    """A server is trying to join a room whose version it does not support."""
+class UnsupportedRoomVersionError(SynapseError):
+    """The client's request to create a room used a room version that the server does
+    not support."""
+    def __init__(self):
+        super(UnsupportedRoomVersionError, self).__init__(
+            code=400,
+            msg="Homeserver does not support this room version",
+            errcode=Codes.UNSUPPORTED_ROOM_VERSION,
+        )
 
+
+class IncompatibleRoomVersionError(SynapseError):
+    """A server is trying to join a room whose version it does not support.
+
+    Unlike UnsupportedRoomVersionError, it is specific to the case of the make_join
+    failing.
+    """
     def __init__(self, room_version):
         super(IncompatibleRoomVersionError, self).__init__(
             code=400,
@@ -346,6 +361,24 @@ class IncompatibleRoomVersionError(SynapseError):
             self.errcode,
             room_version=self._room_version,
         )
+
+
+class RequestSendFailed(RuntimeError):
+    """Sending a HTTP request over federation failed due to not being able to
+    talk to the remote server for some reason.
+
+    This exception is used to differentiate "expected" errors that arise due to
+    networking (e.g. DNS failures, connection timeouts etc), versus unexpected
+    errors (like programming errors).
+    """
+    def __init__(self, inner_exception, can_retry):
+        super(RequestSendFailed, self).__init__(
+            "Failed to send request: %s: %s" % (
+                type(inner_exception).__name__, inner_exception,
+            )
+        )
+        self.inner_exception = inner_exception
+        self.can_retry = can_retry
 
 
 def cs_error(msg, code=Codes.UNKNOWN, **kwargs):
