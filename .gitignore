@@ -31,13 +31,14 @@ _trial_temp*/
 /.coverage*
 !/.coveragerc
 /.tox
+/.venv
 /build/
 /coverage.*
+/data
 /dist/
 /docs/build/
 /htmlcov
 /pip-wheel-metadata/
-
 .vscode/
 .ropeproject/
 

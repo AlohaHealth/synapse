@@ -161,18 +161,19 @@ class LoginRestServlet(ClientV1RestServlet):
                 }
                 defer.returnValue((200, result))
             elif self.auth0_enabled and (login_submission["type"] ==
-                                       LoginRestServlet.AUTH0_TYPE):
+                                         LoginRestServlet.AUTH0_TYPE):
                 result = yield self.do_auth0_login(login_submission)
                 defer.returnValue(result)
             elif self.jwt_enabled and (login_submission["type"] ==
                                        LoginRestServlet.JWT_TYPE):
-            if self.jwt_enabled and (login_submission["type"] ==
-                                     LoginRestServlet.JWT_TYPE):
                 result = yield self.do_jwt_login(login_submission)
+                defer.returnValue(result)
             elif login_submission["type"] == LoginRestServlet.TOKEN_TYPE:
                 result = yield self.do_token_login(login_submission)
+                defer.returnValue(result)
             else:
                 result = yield self._do_other_login(login_submission)
+                defer.returnValue(result)
         except KeyError:
             raise SynapseError(400, "Missing JSON keys.")
 
@@ -403,8 +404,8 @@ class LoginRestServlet(ClientV1RestServlet):
         auth0_client_id = self.hs.config.auth0_client_id
         auth0_username = self.hs.config.auth0_username
 
-        auth0_url = "https://"+ auth0_tenant_domain +"/"
-        auth0_jwks_url = auth0_url +".well-known/jwks.json"
+        auth0_url = f"https://{auth0_tenant_domain}/"
+        auth0_jwks_url = f"{auth0_url}.well-known/jwks.json"
 
         if auth0_access_token is None:
             raise LoginError(
@@ -421,7 +422,11 @@ class LoginRestServlet(ClientV1RestServlet):
             auth0_jwks_json = urllib.request.urlopen(auth0_jwks_url)
             auth0_jwks = json.loads(auth0_jwks_json.read())
         except Exception:
-            raise LoginError(401, "Failed to retrieve JWKS from Auth0", errcode=Codes.UNAUTHORIZED)
+            raise LoginError(
+                401,
+                "Failed to retrieve JWKS from Auth0",
+                errcode=Codes.UNAUTHORIZED
+            )
 
         try:
             from jose import jwt
@@ -442,7 +447,11 @@ class LoginRestServlet(ClientV1RestServlet):
                     }
 
             if jwks_key is None:
-                raise LoginError(401, "Unable to locate JWKS 'kid' matching JWT token", errcode=Codes.UNAUTHORIZED)
+                raise LoginError(
+                    401,
+                    "Unable to locate JWKS 'kid' matching JWT token",
+                    errcode=Codes.UNAUTHORIZED
+                )
 
             payload = jwt.decode(
                 auth0_id_token,
@@ -462,7 +471,12 @@ class LoginRestServlet(ClientV1RestServlet):
 
         token_user = payload.get(auth0_username, None)
         if token_user is None:
-            raise LoginError(401, "JWT does not contain a username. Make sure 'profile' is included in your JWT request scope.", errcode=Codes.UNAUTHORIZED)
+            raise LoginError(
+                401,
+                ("JWT does not contain a username. ",
+                    "Make sure 'profile' is included in your JWT request scope."),
+                errcode=Codes.UNAUTHORIZED
+            )
 
         user = UserID(token_user, self.hs.hostname)
         user_id = user.to_string()
