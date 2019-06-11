@@ -385,8 +385,8 @@ class LoginRestServlet(ClientV1RestServlet):
         auth0_client_id = self.hs.config.auth0_client_id
         auth0_username = self.hs.config.auth0_username
 
-        auth0_url = f"https://{auth0_tenant_domain}/"
-        auth0_jwks_url = f"{auth0_url}.well-known/jwks.json"
+        auth0_url = "https://" + auth0_tenant_domain + "/"
+        auth0_jwks_url = auth0_url + ".well-known/jwks.json"
 
         if auth0_access_token is None:
             raise LoginError(
