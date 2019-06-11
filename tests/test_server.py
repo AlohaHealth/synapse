@@ -19,7 +19,7 @@ from six import StringIO
 
 from twisted.internet.defer import Deferred
 from twisted.python.failure import Failure
-from twisted.test.proto_helpers import AccumulatingProtocol, MemoryReactorClock
+from twisted.test.proto_helpers import AccumulatingProtocol
 from twisted.web.resource import Resource
 from twisted.web.server import NOT_DONE_YET
 
@@ -27,14 +27,21 @@ from synapse.api.errors import Codes, SynapseError
 from synapse.http.server import JsonResource
 from synapse.http.site import SynapseSite, logger
 from synapse.util import Clock
+from synapse.util.logcontext import make_deferred_yieldable
 
 from tests import unittest
-from tests.server import FakeTransport, make_request, render, setup_test_homeserver
+from tests.server import (
+    FakeTransport,
+    ThreadedMemoryReactorClock,
+    make_request,
+    render,
+    setup_test_homeserver,
+)
 
 
 class JsonResourceTests(unittest.TestCase):
     def setUp(self):
-        self.reactor = MemoryReactorClock()
+        self.reactor = ThreadedMemoryReactorClock()
         self.hs_clock = Clock(self.reactor)
         self.homeserver = setup_test_homeserver(
             self.addCleanup, http_client=None, clock=self.hs_clock, reactor=self.reactor
@@ -95,7 +102,7 @@ class JsonResourceTests(unittest.TestCase):
             d = Deferred()
             d.addCallback(_throw)
             self.reactor.callLater(1, d.callback, True)
-            return d
+            return make_deferred_yieldable(d)
 
         res = JsonResource(self.homeserver)
         res.register_paths("GET", [re.compile("^/_matrix/foo$")], _callback)

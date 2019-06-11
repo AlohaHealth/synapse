@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Copyright 2014-2016 OpenMarket Ltd
-# Copyright 2018 New Vector Ltd.
+# Copyright 2018 New Vector Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -156,6 +156,25 @@ def concurrently_execute(func, args, limit):
     ], consumeErrors=True)).addErrback(unwrapFirstError)
 
 
+def yieldable_gather_results(func, iter, *args, **kwargs):
+    """Executes the function with each argument concurrently.
+
+    Args:
+        func (func): Function to execute that returns a Deferred
+        iter (iter): An iterable that yields items that get passed as the first
+            argument to the function
+        *args: Arguments to be passed to each call to func
+
+    Returns
+        Deferred[list]: Resolved when all functions have been invoked, or errors if
+        one of the function calls fails.
+    """
+    return logcontext.make_deferred_yieldable(defer.gatherResults([
+        run_in_background(func, item, *args, **kwargs)
+        for item in iter
+    ], consumeErrors=True)).addErrback(unwrapFirstError)
+
+
 class Linearizer(object):
     """Limits concurrent access to resources based on a key. Useful to ensure
     only a few things happen at a time on a given resource.
@@ -201,7 +220,7 @@ class Linearizer(object):
         if entry[0] >= self.max_count:
             res = self._await_lock(key)
         else:
-            logger.info(
+            logger.debug(
                 "Acquired uncontended linearizer lock %r for key %r", self.name, key,
             )
             entry[0] += 1
@@ -215,7 +234,7 @@ class Linearizer(object):
             try:
                 yield
             finally:
-                logger.info("Releasing linearizer lock %r for key %r", self.name, key)
+                logger.debug("Releasing linearizer lock %r for key %r", self.name, key)
 
                 # We've finished executing so check if there are any things
                 # blocked waiting to execute and start one of them
@@ -247,7 +266,7 @@ class Linearizer(object):
         """
         entry = self.key_to_defer[key]
 
-        logger.info(
+        logger.debug(
             "Waiting to acquire linearizer lock %r for key %r", self.name, key,
         )
 
@@ -255,7 +274,7 @@ class Linearizer(object):
         entry[1][new_defer] = 1
 
         def cb(_r):
-            logger.info("Acquired linearizer lock %r for key %r", self.name, key)
+            logger.debug("Acquired linearizer lock %r for key %r", self.name, key)
             entry[0] += 1
 
             # if the code holding the lock completes synchronously, then it
@@ -273,7 +292,7 @@ class Linearizer(object):
         def eb(e):
             logger.info("defer %r got err %r", new_defer, e)
             if isinstance(e, CancelledError):
-                logger.info(
+                logger.debug(
                     "Cancelling wait for linearizer lock %r for key %r",
                     self.name, key,
                 )
@@ -387,12 +406,14 @@ def timeout_deferred(deferred, timeout, reactor, on_timeout_cancel=None):
     deferred that wraps and times out the given deferred, correctly handling
     the case where the given deferred's canceller throws.
 
+    (See https://twistedmatrix.com/trac/ticket/9534)
+
     NOTE: Unlike `Deferred.addTimeout`, this function returns a new deferred
 
     Args:
         deferred (Deferred)
         timeout (float): Timeout in seconds
-        reactor (twisted.internet.reactor): The twisted reactor to use
+        reactor (twisted.interfaces.IReactorTime): The twisted reactor to use
         on_timeout_cancel (callable): A callable which is called immediately
             after the deferred times out, and not if this deferred is
             otherwise cancelled before the timeout.

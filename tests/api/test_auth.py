@@ -50,6 +50,8 @@ class AuthTestCase(unittest.TestCase):
         # this is overridden for the appservice tests
         self.store.get_app_service_by_token = Mock(return_value=None)
 
+        self.store.is_support_user = Mock(return_value=defer.succeed(False))
+
     @defer.inlineCallbacks
     def test_get_user_by_req_user_valid_token(self):
         user_info = {"name": self.test_user, "token_id": "ditto", "device_id": "device"}
@@ -192,8 +194,6 @@ class AuthTestCase(unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_get_user_from_macaroon(self):
-        # TODO(danielwh): Remove this mock when we remove the
-        # get_user_by_access_token fallback.
         self.store.get_user_by_access_token = Mock(
             return_value={"name": "@baldrick:matrix.org", "device_id": "device"}
         )
@@ -218,6 +218,7 @@ class AuthTestCase(unittest.TestCase):
     @defer.inlineCallbacks
     def test_get_guest_user_from_macaroon(self):
         self.store.get_user_by_id = Mock(return_value={"is_guest": True})
+        self.store.get_user_by_access_token = Mock(return_value=None)
 
         user_id = "@baldrick:matrix.org"
         macaroon = pymacaroons.Macaroon(
@@ -237,158 +238,6 @@ class AuthTestCase(unittest.TestCase):
         self.assertEqual(UserID.from_string(user_id), user)
         self.assertTrue(is_guest)
         self.store.get_user_by_id.assert_called_with(user_id)
-
-    @defer.inlineCallbacks
-    def test_get_user_from_macaroon_user_db_mismatch(self):
-        self.store.get_user_by_access_token = Mock(
-            return_value={"name": "@percy:matrix.org"}
-        )
-
-        user = "@baldrick:matrix.org"
-        macaroon = pymacaroons.Macaroon(
-            location=self.hs.config.server_name,
-            identifier="key",
-            key=self.hs.config.macaroon_secret_key,
-        )
-        macaroon.add_first_party_caveat("gen = 1")
-        macaroon.add_first_party_caveat("type = access")
-        macaroon.add_first_party_caveat("user_id = %s" % (user,))
-        with self.assertRaises(AuthError) as cm:
-            yield self.auth.get_user_by_access_token(macaroon.serialize())
-        self.assertEqual(401, cm.exception.code)
-        self.assertIn("User mismatch", cm.exception.msg)
-
-    @defer.inlineCallbacks
-    def test_get_user_from_macaroon_missing_caveat(self):
-        # TODO(danielwh): Remove this mock when we remove the
-        # get_user_by_access_token fallback.
-        self.store.get_user_by_access_token = Mock(
-            return_value={"name": "@baldrick:matrix.org"}
-        )
-
-        macaroon = pymacaroons.Macaroon(
-            location=self.hs.config.server_name,
-            identifier="key",
-            key=self.hs.config.macaroon_secret_key,
-        )
-        macaroon.add_first_party_caveat("gen = 1")
-        macaroon.add_first_party_caveat("type = access")
-
-        with self.assertRaises(AuthError) as cm:
-            yield self.auth.get_user_by_access_token(macaroon.serialize())
-        self.assertEqual(401, cm.exception.code)
-        self.assertIn("No user caveat", cm.exception.msg)
-
-    @defer.inlineCallbacks
-    def test_get_user_from_macaroon_wrong_key(self):
-        # TODO(danielwh): Remove this mock when we remove the
-        # get_user_by_access_token fallback.
-        self.store.get_user_by_access_token = Mock(
-            return_value={"name": "@baldrick:matrix.org"}
-        )
-
-        user = "@baldrick:matrix.org"
-        macaroon = pymacaroons.Macaroon(
-            location=self.hs.config.server_name,
-            identifier="key",
-            key=self.hs.config.macaroon_secret_key + "wrong",
-        )
-        macaroon.add_first_party_caveat("gen = 1")
-        macaroon.add_first_party_caveat("type = access")
-        macaroon.add_first_party_caveat("user_id = %s" % (user,))
-
-        with self.assertRaises(AuthError) as cm:
-            yield self.auth.get_user_by_access_token(macaroon.serialize())
-        self.assertEqual(401, cm.exception.code)
-        self.assertIn("Invalid macaroon", cm.exception.msg)
-
-    @defer.inlineCallbacks
-    def test_get_user_from_macaroon_unknown_caveat(self):
-        # TODO(danielwh): Remove this mock when we remove the
-        # get_user_by_access_token fallback.
-        self.store.get_user_by_access_token = Mock(
-            return_value={"name": "@baldrick:matrix.org"}
-        )
-
-        user = "@baldrick:matrix.org"
-        macaroon = pymacaroons.Macaroon(
-            location=self.hs.config.server_name,
-            identifier="key",
-            key=self.hs.config.macaroon_secret_key,
-        )
-        macaroon.add_first_party_caveat("gen = 1")
-        macaroon.add_first_party_caveat("type = access")
-        macaroon.add_first_party_caveat("user_id = %s" % (user,))
-        macaroon.add_first_party_caveat("cunning > fox")
-
-        with self.assertRaises(AuthError) as cm:
-            yield self.auth.get_user_by_access_token(macaroon.serialize())
-        self.assertEqual(401, cm.exception.code)
-        self.assertIn("Invalid macaroon", cm.exception.msg)
-
-    @defer.inlineCallbacks
-    def test_get_user_from_macaroon_expired(self):
-        # TODO(danielwh): Remove this mock when we remove the
-        # get_user_by_access_token fallback.
-        self.store.get_user_by_access_token = Mock(
-            return_value={"name": "@baldrick:matrix.org"}
-        )
-
-        self.store.get_user_by_access_token = Mock(
-            return_value={"name": "@baldrick:matrix.org"}
-        )
-
-        user = "@baldrick:matrix.org"
-        macaroon = pymacaroons.Macaroon(
-            location=self.hs.config.server_name,
-            identifier="key",
-            key=self.hs.config.macaroon_secret_key,
-        )
-        macaroon.add_first_party_caveat("gen = 1")
-        macaroon.add_first_party_caveat("type = access")
-        macaroon.add_first_party_caveat("user_id = %s" % (user,))
-        macaroon.add_first_party_caveat("time < -2000")  # ms
-
-        self.hs.clock.now = 5000  # seconds
-        self.hs.config.expire_access_token = True
-        # yield self.auth.get_user_by_access_token(macaroon.serialize())
-        # TODO(daniel): Turn on the check that we validate expiration, when we
-        # validate expiration (and remove the above line, which will start
-        # throwing).
-        with self.assertRaises(AuthError) as cm:
-            yield self.auth.get_user_by_access_token(macaroon.serialize())
-        self.assertEqual(401, cm.exception.code)
-        self.assertIn("Invalid macaroon", cm.exception.msg)
-
-    @defer.inlineCallbacks
-    def test_get_user_from_macaroon_with_valid_duration(self):
-        # TODO(danielwh): Remove this mock when we remove the
-        # get_user_by_access_token fallback.
-        self.store.get_user_by_access_token = Mock(
-            return_value={"name": "@baldrick:matrix.org"}
-        )
-
-        self.store.get_user_by_access_token = Mock(
-            return_value={"name": "@baldrick:matrix.org"}
-        )
-
-        user_id = "@baldrick:matrix.org"
-        macaroon = pymacaroons.Macaroon(
-            location=self.hs.config.server_name,
-            identifier="key",
-            key=self.hs.config.macaroon_secret_key,
-        )
-        macaroon.add_first_party_caveat("gen = 1")
-        macaroon.add_first_party_caveat("type = access")
-        macaroon.add_first_party_caveat("user_id = %s" % (user_id,))
-        macaroon.add_first_party_caveat("time < 900000000")  # ms
-
-        self.hs.clock.now = 5000  # seconds
-        self.hs.config.expire_access_token = True
-
-        user_info = yield self.auth.get_user_by_access_token(macaroon.serialize())
-        user = user_info["user"]
-        self.assertEqual(UserID.from_string(user_id), user)
 
     @defer.inlineCallbacks
     def test_cannot_use_regular_token_as_guest(self):
@@ -487,6 +336,23 @@ class AuthTestCase(unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_hs_disabled(self):
+        self.hs.config.hs_disabled = True
+        self.hs.config.hs_disabled_message = "Reason for being disabled"
+        with self.assertRaises(ResourceLimitError) as e:
+            yield self.auth.check_auth_blocking()
+        self.assertEquals(e.exception.admin_contact, self.hs.config.admin_contact)
+        self.assertEquals(e.exception.errcode, Codes.RESOURCE_LIMIT_EXCEEDED)
+        self.assertEquals(e.exception.code, 403)
+
+    @defer.inlineCallbacks
+    def test_hs_disabled_no_server_notices_user(self):
+        """Check that 'hs_disabled_message' works correctly when there is no
+        server_notices user.
+        """
+        # this should be the default, but we had a bug where the test was doing the wrong
+        # thing, so let's make it explicit
+        self.hs.config.server_notices_mxid = None
+
         self.hs.config.hs_disabled = True
         self.hs.config.hs_disabled_message = "Reason for being disabled"
         with self.assertRaises(ResourceLimitError) as e:

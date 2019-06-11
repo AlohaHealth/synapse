@@ -31,7 +31,7 @@ from .base import ClientV1RestServlet, client_path_patterns
 
 
 class PushRuleRestServlet(ClientV1RestServlet):
-    PATTERNS = client_path_patterns("/pushrules/.*$")
+    PATTERNS = client_path_patterns("/(?P<path>pushrules/.*)$")
     SLIGHTLY_PEDANTIC_TRAILING_SLASH_ERROR = (
         "Unrecognised request: You probably wanted a trailing slash")
 
@@ -39,10 +39,14 @@ class PushRuleRestServlet(ClientV1RestServlet):
         super(PushRuleRestServlet, self).__init__(hs)
         self.store = hs.get_datastore()
         self.notifier = hs.get_notifier()
+        self._is_worker = hs.config.worker_app is not None
 
     @defer.inlineCallbacks
-    def on_PUT(self, request):
-        spec = _rule_spec_from_path(request.postpath)
+    def on_PUT(self, request, path):
+        if self._is_worker:
+            raise Exception("Cannot handle PUT /push_rules on worker")
+
+        spec = _rule_spec_from_path([x for x in path.split("/")])
         try:
             priority_class = _priority_class_from_spec(spec)
         except InvalidRuleException as e:
@@ -102,8 +106,11 @@ class PushRuleRestServlet(ClientV1RestServlet):
         defer.returnValue((200, {}))
 
     @defer.inlineCallbacks
-    def on_DELETE(self, request):
-        spec = _rule_spec_from_path(request.postpath)
+    def on_DELETE(self, request, path):
+        if self._is_worker:
+            raise Exception("Cannot handle DELETE /push_rules on worker")
+
+        spec = _rule_spec_from_path([x for x in path.split("/")])
 
         requester = yield self.auth.get_user_by_req(request)
         user_id = requester.user.to_string()
@@ -123,7 +130,7 @@ class PushRuleRestServlet(ClientV1RestServlet):
                 raise
 
     @defer.inlineCallbacks
-    def on_GET(self, request):
+    def on_GET(self, request, path):
         requester = yield self.auth.get_user_by_req(request)
         user_id = requester.user.to_string()
 
@@ -134,7 +141,7 @@ class PushRuleRestServlet(ClientV1RestServlet):
 
         rules = format_push_rules_for_user(requester.user, rules)
 
-        path = request.postpath[1:]
+        path = [x for x in path.split("/")][1:]
 
         if path == []:
             # we're a reference impl: pedantry is our job.
@@ -142,16 +149,15 @@ class PushRuleRestServlet(ClientV1RestServlet):
                 PushRuleRestServlet.SLIGHTLY_PEDANTIC_TRAILING_SLASH_ERROR
             )
 
-        if path[0] == b'':
+        if path[0] == '':
             defer.returnValue((200, rules))
-        elif path[0] == b'global':
-            path = [x.decode('ascii') for x in path[1:]]
-            result = _filter_ruleset_with_path(rules['global'], path)
+        elif path[0] == 'global':
+            result = _filter_ruleset_with_path(rules['global'], path[1:])
             defer.returnValue((200, result))
         else:
             raise UnrecognizedRequestError()
 
-    def on_OPTIONS(self, _):
+    def on_OPTIONS(self, request, path):
         return 200, {}
 
     def notify_user(self, user_id):
@@ -190,12 +196,24 @@ class PushRuleRestServlet(ClientV1RestServlet):
 
 
 def _rule_spec_from_path(path):
+    """Turn a sequence of path components into a rule spec
+
+    Args:
+        path (sequence[unicode]): the URL path components.
+
+    Returns:
+        dict: rule spec dict, containing scope/template/rule_id entries,
+            and possibly attr.
+
+    Raises:
+        UnrecognizedRequestError if the path components cannot be parsed.
+    """
     if len(path) < 2:
         raise UnrecognizedRequestError()
-    if path[0] != b'pushrules':
+    if path[0] != 'pushrules':
         raise UnrecognizedRequestError()
 
-    scope = path[1].decode('ascii')
+    scope = path[1]
     path = path[2:]
     if scope != 'global':
         raise UnrecognizedRequestError()
@@ -203,13 +221,13 @@ def _rule_spec_from_path(path):
     if len(path) == 0:
         raise UnrecognizedRequestError()
 
-    template = path[0].decode('ascii')
+    template = path[0]
     path = path[1:]
 
     if len(path) == 0 or len(path[0]) == 0:
         raise UnrecognizedRequestError()
 
-    rule_id = path[0].decode('ascii')
+    rule_id = path[0]
 
     spec = {
         'scope': scope,
@@ -220,7 +238,7 @@ def _rule_spec_from_path(path):
     path = path[1:]
 
     if len(path) > 0 and len(path[0]) > 0:
-        spec['attr'] = path[0].decode('ascii')
+        spec['attr'] = path[0]
 
     return spec
 

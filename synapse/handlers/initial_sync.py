@@ -18,8 +18,7 @@ import logging
 from twisted.internet import defer
 
 from synapse.api.constants import EventTypes, Membership
-from synapse.api.errors import AuthError, Codes
-from synapse.events.utils import serialize_event
+from synapse.api.errors import AuthError, Codes, SynapseError
 from synapse.events.validator import EventValidator
 from synapse.handlers.presence import format_user_presence_state
 from synapse.streams.config import PaginationConfig
@@ -43,6 +42,7 @@ class InitialSyncHandler(BaseHandler):
         self.clock = hs.get_clock()
         self.validator = EventValidator()
         self.snapshot_cache = SnapshotCache()
+        self._event_serializer = hs.get_event_client_serializer()
 
     def snapshot_all_rooms(self, user_id=None, pagin_config=None,
                            as_client_event=True, include_archived=False):
@@ -138,7 +138,9 @@ class InitialSyncHandler(BaseHandler):
                 d["inviter"] = event.sender
 
                 invite_event = yield self.store.get_event(event.event_id)
-                d["invite"] = serialize_event(invite_event, time_now, as_client_event)
+                d["invite"] = yield self._event_serializer.serialize_event(
+                    invite_event, time_now, as_client_event,
+                )
 
             rooms_ret.append(d)
 
@@ -185,18 +187,21 @@ class InitialSyncHandler(BaseHandler):
                 time_now = self.clock.time_msec()
 
                 d["messages"] = {
-                    "chunk": [
-                        serialize_event(m, time_now, as_client_event)
-                        for m in messages
-                    ],
+                    "chunk": (
+                        yield self._event_serializer.serialize_events(
+                            messages, time_now=time_now,
+                            as_client_event=as_client_event,
+                        )
+                    ),
                     "start": start_token.to_string(),
                     "end": end_token.to_string(),
                 }
 
-                d["state"] = [
-                    serialize_event(c, time_now, as_client_event)
-                    for c in current_state.values()
-                ]
+                d["state"] = yield self._event_serializer.serialize_events(
+                    current_state.values(),
+                    time_now=time_now,
+                    as_client_event=as_client_event
+                )
 
                 account_data_events = []
                 tags = tags_by_room.get(event.room_id)
@@ -261,6 +266,10 @@ class InitialSyncHandler(BaseHandler):
         Returns:
             A JSON serialisable dict with the snapshot of the room.
         """
+
+        blocked = yield self.store.is_room_blocked(room_id)
+        if blocked:
+            raise SynapseError(403, "This room has been blocked on this server")
 
         user_id = requester.user.to_string()
 
@@ -333,11 +342,15 @@ class InitialSyncHandler(BaseHandler):
             "membership": membership,
             "room_id": room_id,
             "messages": {
-                "chunk": [serialize_event(m, time_now) for m in messages],
+                "chunk": (yield self._event_serializer.serialize_events(
+                    messages, time_now,
+                )),
                 "start": start_token.to_string(),
                 "end": end_token.to_string(),
             },
-            "state": [serialize_event(s, time_now) for s in room_state.values()],
+            "state": (yield self._event_serializer.serialize_events(
+                room_state.values(), time_now,
+            )),
             "presence": [],
             "receipts": [],
         })
@@ -351,10 +364,9 @@ class InitialSyncHandler(BaseHandler):
 
         # TODO: These concurrently
         time_now = self.clock.time_msec()
-        state = [
-            serialize_event(x, time_now)
-            for x in current_state.values()
-        ]
+        state = yield self._event_serializer.serialize_events(
+            current_state.values(), time_now,
+        )
 
         now_token = yield self.hs.get_event_sources().get_current_token()
 
@@ -421,7 +433,9 @@ class InitialSyncHandler(BaseHandler):
         ret = {
             "room_id": room_id,
             "messages": {
-                "chunk": [serialize_event(m, time_now) for m in messages],
+                "chunk": (yield self._event_serializer.serialize_events(
+                    messages, time_now,
+                )),
                 "start": start_token.to_string(),
                 "end": end_token.to_string(),
             },

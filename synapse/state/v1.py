@@ -23,6 +23,7 @@ from twisted.internet import defer
 from synapse import event_auth
 from synapse.api.constants import EventTypes
 from synapse.api.errors import AuthError
+from synapse.api.room_versions import RoomVersions
 
 logger = logging.getLogger(__name__)
 
@@ -274,7 +275,13 @@ def _resolve_auth_events(events, auth_events):
         auth_events[(prev_event.type, prev_event.state_key)] = prev_event
         try:
             # The signatures have already been checked at this point
-            event_auth.check(event, auth_events, do_sig_check=False, do_size_check=False)
+            event_auth.check(
+                RoomVersions.V1.identifier,
+                event,
+                auth_events,
+                do_sig_check=False,
+                do_size_check=False,
+            )
             prev_event = event
         except AuthError:
             return prev_event
@@ -286,7 +293,13 @@ def _resolve_normal_events(events, auth_events):
     for event in _ordered_events(events):
         try:
             # The signatures have already been checked at this point
-            event_auth.check(event, auth_events, do_sig_check=False, do_size_check=False)
+            event_auth.check(
+                RoomVersions.V1.identifier,
+                event,
+                auth_events,
+                do_sig_check=False,
+                do_size_check=False,
+            )
             return event
         except AuthError:
             pass
@@ -298,6 +311,8 @@ def _resolve_normal_events(events, auth_events):
 
 def _ordered_events(events):
     def key_func(e):
-        return -int(e.depth), hashlib.sha1(e.event_id.encode('ascii')).hexdigest()
+        # we have to use utf-8 rather than ascii here because it turns out we allow
+        # people to send us events with non-ascii event IDs :/
+        return -int(e.depth), hashlib.sha1(e.event_id.encode('utf-8')).hexdigest()
 
     return sorted(events, key=key_func)
