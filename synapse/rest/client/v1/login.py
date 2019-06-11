@@ -15,7 +15,8 @@
 
 import logging
 import xml.etree.ElementTree as ET
-
+import json
+from jose import jwt
 from six.moves import urllib
 
 from twisted.internet import defer
@@ -29,8 +30,8 @@ from synapse.http.servlet import (
     parse_json_object_from_request,
     parse_string,
 )
-from synapse.types import UserID, create_requester, map_username_to_mxid_localpart
 from synapse.rest.well_known import WellKnownBuilder
+from synapse.types import UserID, create_requester, map_username_to_mxid_localpart
 from synapse.util.msisdn import phone_number_to_msisdn
 
 from .base import ClientV1RestServlet, client_path_patterns
@@ -91,15 +92,12 @@ class LoginRestServlet(ClientV1RestServlet):
 
     def __init__(self, hs):
         super(LoginRestServlet, self).__init__(hs)
-        self.idp_redirect_url = hs.config.saml2_idp_redirect_url
-        self.saml2_enabled = hs.config.saml2_enabled
         self.auth0_enabled = hs.config.auth0_enabled
         self.jwt_enabled = hs.config.jwt_enabled
         self.jwt_secret = hs.config.jwt_secret
         self.jwt_algorithm = hs.config.jwt_algorithm
         self.cas_enabled = hs.config.cas_enabled
         self.auth_handler = self.hs.get_auth_handler()
-        self.device_handler = self.hs.get_device_handler()
         self.profile_handler = self.hs.get_profile_handler()
         self.registration_handler = hs.get_registration_handler()
         self.handlers = hs.get_handlers()
@@ -112,8 +110,6 @@ class LoginRestServlet(ClientV1RestServlet):
             flows.append({"type": LoginRestServlet.JWT_TYPE})
         if self.auth0_enabled:
             flows.append({"type": LoginRestServlet.AUTH0_TYPE})
-        if self.saml2_enabled:
-            flows.append({"type": LoginRestServlet.SAML2_TYPE})
         if self.cas_enabled:
             flows.append({"type": LoginRestServlet.SSO_TYPE})
 
@@ -150,30 +146,16 @@ class LoginRestServlet(ClientV1RestServlet):
 
         login_submission = parse_json_object_from_request(request)
         try:
-            if self.saml2_enabled and (login_submission["type"] ==
-                                       LoginRestServlet.SAML2_TYPE):
-                relay_state = ""
-                if "relay_state" in login_submission:
-                    relay_state = "&RelayState=" + urllib.parse.quote(
-                                  login_submission["relay_state"])
-                result = {
-                    "uri": "%s%s" % (self.idp_redirect_url, relay_state)
-                }
-                defer.returnValue((200, result))
+            if self.jwt_enabled and (login_submission["type"] ==
+                                     LoginRestServlet.JWT_TYPE):
+                result = yield self.do_jwt_login(login_submission)
             elif self.auth0_enabled and (login_submission["type"] ==
                                          LoginRestServlet.AUTH0_TYPE):
                 result = yield self.do_auth0_login(login_submission)
-                defer.returnValue(result)
-            elif self.jwt_enabled and (login_submission["type"] ==
-                                       LoginRestServlet.JWT_TYPE):
-                result = yield self.do_jwt_login(login_submission)
-                defer.returnValue(result)
             elif login_submission["type"] == LoginRestServlet.TOKEN_TYPE:
                 result = yield self.do_token_login(login_submission)
-                defer.returnValue(result)
             else:
                 result = yield self._do_other_login(login_submission)
-                defer.returnValue(result)
         except KeyError:
             raise SynapseError(400, "Missing JSON keys.")
 
@@ -393,8 +375,7 @@ class LoginRestServlet(ClientV1RestServlet):
                 "access_token": access_token,
                 "home_server": self.hs.hostname,
             }
-
-        defer.returnValue((200, result))
+        defer.returnValue(result)
 
     @defer.inlineCallbacks
     def do_auth0_login(self, login_submission):
@@ -429,8 +410,6 @@ class LoginRestServlet(ClientV1RestServlet):
             )
 
         try:
-            from jose import jwt
-
             jwks_key = None
             jwks_alg = None
             token_header = jwt.get_unverified_header(auth0_id_token)
@@ -506,11 +485,9 @@ class LoginRestServlet(ClientV1RestServlet):
                 )
 
         # get an access token
-        device_id = yield self._register_device(
-            registered_user_id, login_submission
-        )
-        access_token = yield self.auth_handler.get_access_token_for_user_id(
-            registered_user_id, device_id,
+        device_id = login_submission.get("device_id")
+        device_id, access_token = yield self.registration_handler.register_device(
+            registered_user_id, device_id, displayname,
         )
 
         result = {
@@ -519,28 +496,6 @@ class LoginRestServlet(ClientV1RestServlet):
             "home_server": self.hs.hostname,
             "user_id": registered_user_id,
         }
-
-        defer.returnValue((200, result))
-
-    def _register_device(self, user_id, login_submission):
-        """Register a device for a user.
-
-        This is called after the user's credentials have been validated, but
-        before the access token has been issued.
-
-        Args:
-            (str) user_id: full canonical @user:id
-            (object) login_submission: dictionary supplied to /login call, from
-               which we pull device_id and initial_device_name
-        Returns:
-            defer.Deferred: (str) device_id
-        """
-        device_id = login_submission.get("device_id")
-        initial_display_name = login_submission.get(
-            "initial_device_display_name")
-        return self.device_handler.check_device_registered(
-            user_id, device_id, initial_display_name
-        )
         defer.returnValue(result)
 
 
