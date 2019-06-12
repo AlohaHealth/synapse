@@ -484,10 +484,12 @@ class LoginRestServlet(ClientV1RestServlet):
                     user, requestor, avatar_url, by_admin=True
                 )
 
+        initial_display_name = login_submission.get("initial_device_display_name")
+
         # get an access token
         device_id = login_submission.get("device_id")
         device_id, access_token = yield self.registration_handler.register_device(
-            registered_user_id, device_id, displayname,
+            registered_user_id, device_id, initial_display_name,
         )
 
         result = {
